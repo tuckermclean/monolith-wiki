@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "monolith-wiki"
 version = "1.0.0"
-description = "Wikipedia Attenuation Pipeline — Monolith Wiki Slice generator"
+description = "Wikipedia Attenuation Pipeline — Monolith Wiki generator"
 requires-python = ">=3.11"
 dependencies = [
     "libzim>=3.6.0",

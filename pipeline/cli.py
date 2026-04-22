@@ -71,7 +71,7 @@ def _import_stage(stage_id: str):
 )
 @click.pass_context
 def main(ctx: click.Context, config_path: str | None) -> None:
-    """Monolith Wiki Slice — Wikipedia Attenuation Pipeline."""
+    """Monolith Wiki — Wikipedia Attenuation Pipeline."""
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = config_path
 

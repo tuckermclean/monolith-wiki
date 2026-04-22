@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Monolith Wiki Slice — Default Configuration
+# Monolith Wiki — Default Configuration
 # ---------------------------------------------------------------------------
 # All paths that begin with "/" are treated as absolute.
 # All other paths are relative to the working directory at invocation time.

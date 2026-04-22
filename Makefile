@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Monolith Wiki Slice — Build Orchestration
+# Monolith Wiki — Build Orchestration
 # ---------------------------------------------------------------------------
 # Usage:
 #   make fetch-zim    — download latest Wikipedia no-pictures ZIM from Kiwix
