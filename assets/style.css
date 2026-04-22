@@ -1,0 +1,313 @@
+/*
+ * Monolith Wiki Slice — Shared Stylesheet
+ *
+ * Design principles:
+ *   - Legible on any screen and in print.
+ *   - No JavaScript dependency.
+ *   - Encarta-era content, 21st-century readability.
+ *   - Dark mode via prefers-color-scheme.
+ */
+
+/* ------------------------------------------------------------------
+   Reset / Box model
+   ------------------------------------------------------------------ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ------------------------------------------------------------------
+   Custom properties (light mode defaults)
+   ------------------------------------------------------------------ */
+:root {
+  --bg:          #fafaf8;
+  --surface:     #ffffff;
+  --text:        #1a1a1a;
+  --text-muted:  #555;
+  --accent:      #0645ad;     /* Wikipedia blue */
+  --accent-vis:  #551a8b;     /* visited link */
+  --border:      #d0cec8;
+  --code-bg:     #f4f3ef;
+  --toc-bg:      #f8f7f4;
+  --max-width:   860px;
+  --font-serif:  Georgia, "Times New Roman", serif;
+  --font-sans:   system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-mono:   "Courier New", Courier, monospace;
+  --line-height: 1.7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:         #1a1a1a;
+    --surface:    #242424;
+    --text:       #e8e6df;
+    --text-muted: #999;
+    --accent:     #6ea8fe;
+    --accent-vis: #c08eff;
+    --border:     #3a3a3a;
+    --code-bg:    #2c2c2c;
+    --toc-bg:     #212121;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Base
+   ------------------------------------------------------------------ */
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  line-height: var(--line-height);
+  background: var(--bg);
+  color: var(--text);
+  padding: 1rem;
+}
+
+/* ------------------------------------------------------------------
+   Article layout
+   ------------------------------------------------------------------ */
+article.mw-body {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  background: var(--surface);
+  padding: 2rem 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+@media (max-width: 600px) {
+  article.mw-body { padding: 1rem; }
+}
+
+/* ------------------------------------------------------------------
+   Typography
+   ------------------------------------------------------------------ */
+h1.firstHeading {
+  font-family: var(--font-sans);
+  font-size: 1.9rem;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.4rem;
+  margin-bottom: 1.2rem;
+  color: var(--text);
+}
+
+h2 {
+  font-family: var(--font-sans);
+  font-size: 1.35rem;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+  margin: 1.8rem 0 0.6rem;
+  padding-bottom: 0.25rem;
+}
+
+h3 {
+  font-family: var(--font-sans);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 1.4rem 0 0.4rem;
+}
+
+h4, h5, h6 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  margin: 1rem 0 0.3rem;
+}
+
+p { margin: 0.75rem 0; }
+
+/* ------------------------------------------------------------------
+   Links
+   ------------------------------------------------------------------ */
+a { color: var(--accent); text-decoration: none; }
+a:visited { color: var(--accent-vis); }
+a:hover, a:focus { text-decoration: underline; }
+
+/* Dead links (excluded articles) */
+span.mw-deadlink {
+  color: var(--text-muted);
+  border-bottom: 1px dashed var(--border);
+  cursor: default;
+}
+
+/* ------------------------------------------------------------------
+   Table of Contents
+   ------------------------------------------------------------------ */
+nav#toc {
+  background: var(--toc-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  display: inline-block;
+  min-width: 200px;
+  max-width: 380px;
+  margin: 0 0 1.5rem 0;
+}
+
+nav#toc .toc-title {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.4rem;
+}
+
+nav#toc ol {
+  list-style: none;
+  padding-left: 0;
+}
+
+nav#toc ol ol {
+  padding-left: 1.2rem;
+}
+
+nav#toc li { margin: 0.15rem 0; font-size: 0.88rem; }
+
+nav#toc li.toc-h3 { font-size: 0.82rem; color: var(--text-muted); }
+
+/* ------------------------------------------------------------------
+   Tables
+   ------------------------------------------------------------------ */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.92rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+  display: block;
+}
+
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.65rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: var(--toc-bg);
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+tr:nth-child(even) td { background: var(--bg); }
+
+/* Infobox (right-aligned summary tables) */
+table.infobox {
+  float: right;
+  clear: right;
+  width: auto;
+  max-width: 320px;
+  margin: 0 0 1rem 1.5rem;
+  font-size: 0.85rem;
+  display: table;   /* override "block" above */
+}
+
+@media (max-width: 600px) {
+  table.infobox { float: none; max-width: 100%; margin: 1rem 0; }
+}
+
+/* ------------------------------------------------------------------
+   Inline math (SVG preserved from mwoffliner)
+   ------------------------------------------------------------------ */
+span.mwe-math-element {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+span.mwe-math-element svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ------------------------------------------------------------------
+   Code / pre
+   ------------------------------------------------------------------ */
+code, kbd, samp {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--code-bg);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  border-radius: 4px;
+  line-height: 1.45;
+  margin: 0.75rem 0;
+}
+
+pre code { background: none; padding: 0; }
+
+/* ------------------------------------------------------------------
+   Blockquote
+   ------------------------------------------------------------------ */
+blockquote {
+  border-left: 3px solid var(--border);
+  margin: 1rem 0;
+  padding: 0.25rem 1rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ------------------------------------------------------------------
+   Lists
+   ------------------------------------------------------------------ */
+ul, ol { margin: 0.5rem 0 0.5rem 1.6rem; }
+li { margin: 0.2rem 0; }
+
+/* ------------------------------------------------------------------
+   Definition lists
+   ------------------------------------------------------------------ */
+dl { margin: 0.5rem 0; }
+dt { font-weight: 600; }
+dd { margin-left: 1.5rem; }
+
+/* ------------------------------------------------------------------
+   Figures / captions (SVG math captions only; no raster images)
+   ------------------------------------------------------------------ */
+figure {
+  margin: 1rem 0;
+  text-align: center;
+}
+
+figcaption {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 0.3rem;
+}
+
+/* ------------------------------------------------------------------
+   Horizontal rule
+   ------------------------------------------------------------------ */
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.5rem 0;
+}
+
+/* ------------------------------------------------------------------
+   Superscript / subscript (common in science articles)
+   ------------------------------------------------------------------ */
+sup, sub { font-size: 0.75em; line-height: 0; position: relative; vertical-align: baseline; }
+sup { top: -0.5em; }
+sub { bottom: -0.25em; }
+
+/* ------------------------------------------------------------------
+   Print styles
+   ------------------------------------------------------------------ */
+@media print {
+  body { background: #fff; color: #000; font-size: 11pt; }
+  article.mw-body { border: none; padding: 0; max-width: 100%; }
+  nav#toc { display: none; }
+  a { color: #000; text-decoration: underline; }
+  a[href]::after { content: " (" attr(href) ")"; font-size: 0.8em; }
+}

@@ -1,0 +1,12 @@
+services:
+  pipeline:
+    build: .
+    volumes:
+      - "${ZIM_DIR:-./data/input}:/data/input:ro"
+      - "${BUILD_DIR:-./data/build}:/data/build"
+    environment:
+      - MONOLITH_CONFIG=/app/config/default.yaml
+    # Override CMD to run a specific stage, e.g.:
+    #   docker compose run pipeline run --stage s0
+    #   docker compose run pipeline run-all
+    command: ["run-all"]

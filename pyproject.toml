@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "monolith-wiki"
+version = "1.0.0"
+description = "Wikipedia Attenuation Pipeline — Monolith Wiki Slice generator"
+requires-python = ">=3.11"
+dependencies = [
+    "libzim>=3.6.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.2.0",
+    "pyyaml>=6.0.1",
+    "click>=8.1.7",
+    "zstandard>=0.22.0",
+    "tqdm>=4.66.0",
+]
+
+[project.scripts]
+monolith-wiki = "pipeline.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pipeline*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

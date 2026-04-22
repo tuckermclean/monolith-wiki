@@ -1,0 +1,114 @@
+# ---------------------------------------------------------------------------
+# Monolith Wiki Slice — Default Configuration
+# ---------------------------------------------------------------------------
+# All paths that begin with "/" are treated as absolute.
+# All other paths are relative to the working directory at invocation time.
+# ---------------------------------------------------------------------------
+
+input:
+  # Path to the English Wikipedia ZIM file.
+  zim_path: "data/input/wikipedia_en.zim"
+
+  # SHA-256 of the ZIM file (hex string).
+  # Pipeline aborts at startup if the file does not match this hash.
+  # Set to null to skip verification (not recommended for reproducible builds).
+  zim_sha256: null
+
+build:
+  # Root directory for all pipeline outputs.
+  build_dir: "data/build"
+
+  # SQLite database path (relative to build_dir).
+  db_name: "pipeline.db"
+
+  # Directory for normalised HTML (relative to build_dir).
+  normalized_dir: "normalized"
+
+  # Directory for final compressed corpus (relative to build_dir).
+  corpus_dir: "corpus"
+
+  # Shared CSS asset filename (placed under corpus_dir/assets/).
+  css_filename: "style.css"
+
+  # Hard maximum total compressed output size in bytes (400 MB).
+  max_total_compressed_bytes: 419430400
+
+  # zstd compression level (1–22; 9 is a good speed/ratio balance).
+  zstd_level: 9
+
+# ---------------------------------------------------------------------------
+# Stage 1 — Hard Pre-Filter
+# ---------------------------------------------------------------------------
+prefilter:
+  # Minimum plain-text character count to pass (below = excluded as stub/stub-like).
+  min_text_chars: 5000
+
+  # Minimum number of inbound internal links (below = excluded as orphan).
+  min_inbound_links: 5
+
+# ---------------------------------------------------------------------------
+# Stage 3 — Knowledge Stability Score (KSS)
+# ---------------------------------------------------------------------------
+kss:
+  # Weights must sum to 1.0 (recency_penalty weight is subtracted).
+  weights:
+    log_inbound:       0.30
+    cross_domain:      0.20
+    length_score:      0.15
+    category_coverage: 0.15
+    longevity:         0.15
+    recency_penalty:   0.05
+
+  # Normalisation ceiling for article text length (characters).
+  # Articles longer than this are soft-capped at score=1.0 for length_score.
+  length_soft_cap: 100000
+
+  # Minimum article length used as the lower bound for length_score.
+  length_floor: 5000
+
+# ---------------------------------------------------------------------------
+# Stage 4 — Domain Quotas
+# ---------------------------------------------------------------------------
+quotas:
+  Geography:                      6000
+  Biography:                      6000
+  History:                        4000
+  Science_Math:                   4000
+  Arts_Culture:                   4000
+  Technology_Computing:           3000
+  Society_Politics_Economics:     2000
+  Meta_Reference:                 1000
+
+# ---------------------------------------------------------------------------
+# Stage 5 — Adjacency Repair
+# ---------------------------------------------------------------------------
+repair:
+  # Number of outbound links per article to check for inclusion.
+  top_n_links: 8
+
+  # Minimum KSS for a missing article to be pulled into the corpus.
+  min_pull_kss: 0.40
+
+  # Maximum allowed overage above quota before eviction begins.
+  # e.g. 0.05 = domain can grow to quota * 1.05 before lowest-KSS article is evicted.
+  max_overage_fraction: 0.05
+
+  # Maximum repair iterations before halting (prevents infinite loops).
+  max_iterations: 50
+
+# ---------------------------------------------------------------------------
+# Stage 8 — Validation
+# ---------------------------------------------------------------------------
+validation:
+  # Number of random-walk simulations.
+  random_walk_count: 5000
+
+  # Steps per random walk.
+  random_walk_steps: 200
+
+  # Maximum acceptable dead-end rate (fraction of walks that hit a dead end).
+  max_dead_end_rate: 0.01
+
+  # Acceptable quota deviation (fraction): each domain count must be within
+  # [quota * (1 - tolerance), quota * (1 + tolerance)].
+  quota_tolerance: 0.05
