@@ -1,0 +1,160 @@
+name: Build Wikipedia Corpus
+
+# ── Triggers ────────────────────────────────────────────────────────────────
+# 1. workflow_dispatch  — kick off manually; optionally publish a Release.
+# 2. push corpus-v* tag — creates a versioned Release automatically.
+# 3. schedule           — monthly rebuild on the 5th (Kiwix usually publishes
+#                         the new ZIM by then).
+on:
+  workflow_dispatch:
+    inputs:
+      zim_book:
+        description: >
+          ZIM book name (e.g. wikipedia_en_all_nopic, wikipedia_en_all_maxi)
+        default: wikipedia_en_all_nopic
+        required: false
+        type: string
+      release:
+        description: Publish result as a GitHub Release
+        default: false
+        type: boolean
+  push:
+    tags: ['corpus-v*']
+  schedule:
+    - cron: '0 4 5 * *'   # 05:00 UTC on the 5th of every month
+
+# Only one corpus build at a time; never cancel a run that is already in
+# progress — a 22 GB download + full pipeline run is expensive.
+concurrency:
+  group: build-corpus
+  cancel-in-progress: false
+
+# Needed to create/update Releases and upload release assets.
+permissions:
+  contents: write
+
+# ── Jobs ─────────────────────────────────────────────────────────────────────
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # ⚠ The full no-pictures Wikipedia ZIM is ~22 GB.  GitHub-hosted runners
+    # have a 10 GB Actions cache quota, so the ZIM will NOT persist across
+    # runs and will be re-downloaded each time (~20 min on a fast uplink).
+    # For production use, pin this to a self-hosted runner that keeps a warm
+    # local cache or has the ZIM pre-fetched on a mounted volume.
+
+    env:
+      ZIM_BOOK: ${{ inputs.zim_book || 'wikipedia_en_all_nopic' }}
+
+    steps:
+      # ── Checkout ────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+
+      # ── Python ──────────────────────────────────────────────────────────
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install pipeline
+        run: pip install -e .
+
+      # ── System dep: zstd for final tarball ──────────────────────────────
+      - name: Install zstd
+        run: sudo apt-get install -y --no-install-recommends zstd
+
+      # ── ZIM acquisition ──────────────────────────────────────────────────
+      - name: Resolve latest ZIM filename
+        id: zim
+        run: |
+          python3 - <<'EOF'
+          import os, re, sys, urllib.request
+          base = 'https://download.kiwix.org/zim/wikipedia'
+          name = os.environ['ZIM_BOOK']
+          index = urllib.request.urlopen(base + '/').read().decode()
+          hits = sorted(set(re.findall(re.escape(name) + r'_\d{4}-\d{2}\.zim', index)))
+          if not hits:
+              print(f"::error::No ZIM found for '{name}' in the Kiwix index.", file=sys.stderr)
+              sys.exit(1)
+          fn = hits[-1]
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+              fh.write(f'filename={fn}\n')
+              fh.write(f'url={base}/{fn}\n')
+          print(f'Resolved: {fn}  ({base}/{fn})')
+          EOF
+
+      # Cache key is the versioned ZIM filename (e.g. wikipedia_en_all_nopic_2026-03.zim).
+      # The cache invalidates automatically when a new monthly ZIM is published.
+      # Note: exceeds GitHub-hosted runner cache quota; works fully on self-hosted.
+      - name: Restore ZIM from cache
+        id: cache-zim
+        uses: actions/cache@v4
+        with:
+          path: data/input/wikipedia_en.zim
+          key: zim-${{ steps.zim.outputs.filename }}
+
+      - name: Download ZIM
+        if: steps.cache-zim.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p data/input
+          wget --continue --progress=dot:giga \
+               -O data/input/wikipedia_en.zim \
+               "${{ steps.zim.outputs.url }}"
+
+      # ── Pipeline ─────────────────────────────────────────────────────────
+      - name: Run pipeline
+        run: |
+          monolith-wiki --config config/default.yaml run-all
+
+      # ── Package ──────────────────────────────────────────────────────────
+      - name: Package corpus tarball
+        id: pkg
+        run: |
+          VERSION=$(date -u +%Y-%m)
+          TARBALL="monolith-wiki-corpus-${VERSION}.tar.zst"
+          # Inner files are already per-article .html.zst; use -T0 for parallel
+          # compression of the uncompressed entries (manifests, CSS, BUILD_HASH).
+          tar --use-compress-program="zstd -T0 -9" \
+              -cf "${TARBALL}" -C data/build/corpus .
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}"  >> "$GITHUB_OUTPUT"
+          du -sh "${TARBALL}"
+
+      # ── Upload as workflow artifact (always) ─────────────────────────────
+      - name: Upload corpus artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: monolith-wiki-corpus-${{ steps.pkg.outputs.version }}
+          path: ${{ steps.pkg.outputs.tarball }}
+          retention-days: 30
+          compression-level: 0   # corpus is already zstd-compressed
+
+      # ── Publish GitHub Release (on tag push or explicit opt-in) ──────────
+      - name: Publish GitHub Release
+        if: >-
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/corpus-v')) ||
+          (inputs.release == true)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            # Use the tag that triggered this run.
+            TAG="$GITHUB_REF_NAME"
+          else
+            # Derive a tag from the build month; create it if it doesn't exist.
+            TAG="corpus-${{ steps.pkg.outputs.version }}"
+          fi
+
+          NOTES="Built from \`${{ steps.zim.outputs.filename }}\`.
+
+          ~30 000 curated articles · 8 knowledge domains · zstd-compressed.
+          Unpack with: \`tar -I zstd -xf ${{ steps.pkg.outputs.tarball }}\`"
+
+          # Create the release; if it already exists this month, replace the asset.
+          gh release create "$TAG" \
+            --title "Corpus ${{ steps.pkg.outputs.version }}" \
+            --notes "$NOTES" \
+            --latest \
+            "${{ steps.pkg.outputs.tarball }}" \
+          || gh release upload "$TAG" \
+               "${{ steps.pkg.outputs.tarball }}" --clobber
