@@ -1,3 +1,7 @@
 .venv
 .pytest_cache
 __pycache__
+*.pyc
+
+# Pipeline I/O — ZIM inputs and all build artefacts are large/generated
+data/

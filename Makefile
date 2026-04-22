@@ -2,6 +2,7 @@
 # Monolith Wiki Slice — Build Orchestration
 # ---------------------------------------------------------------------------
 # Usage:
+#   make fetch-zim    — download latest Wikipedia no-pictures ZIM from Kiwix
 #   make all          — run full pipeline (resume-safe via sentinels)
 #   make stage0       — ZIM indexing only
 #   make clean        — remove all build artefacts (keeps raw ZIM input)
@@ -13,15 +14,24 @@
 # Requires: MONOLITH_CONFIG env var or config/default.yaml present.
 # ---------------------------------------------------------------------------
 
-PYTHON      ?= python
-CONFIG      ?= config/default.yaml
-BUILD_DIR   ?= data/build
-SENTINEL    := $(BUILD_DIR)/.sentinels
+PYTHON         ?= python
+CONFIG         ?= config/default.yaml
+BUILD_DIR      ?= data/build
+SENTINEL       := $(BUILD_DIR)/.sentinels
+
+# ZIM acquisition settings
+ZIM_INPUT_DIR  ?= data/input
+ZIM_DEST       ?= $(ZIM_INPUT_DIR)/wikipedia_en.zim
+KIWIX_DOWNLOAD := https://download.kiwix.org/zim/wikipedia
+# Use the no-pictures variant (smallest, sufficient — pipeline strips images anyway).
+# Override to e.g. wikipedia_en_all_maxi for the image-inclusive ZIM.
+ZIM_BOOK_NAME  ?= wikipedia_en_all_nopic
+
 ZIM_FILE    ?= $(shell $(PYTHON) -c \
     "import yaml; c=yaml.safe_load(open('$(CONFIG)')); print(c['input']['zim_path'])" 2>/dev/null || echo "UNKNOWN")
 
 .PHONY: all stage0 stage1 stage2 stage3 stage4 stage5 stage6 stage7 stage8 \
-        validate test clean clean-stage docker-build docker-run
+        validate test clean clean-stage fetch-zim docker-build docker-run
 
 # ------------------------------------------------------------------
 # Full pipeline
@@ -107,6 +117,34 @@ clean-stage:
 # ------------------------------------------------------------------
 test:
 	$(PYTHON) -m pytest tests/ -v --tb=short
+
+# ------------------------------------------------------------------
+# ZIM Acquisition
+# ------------------------------------------------------------------
+# Downloads the latest Kiwix no-pictures English Wikipedia ZIM and saves it
+# to $(ZIM_DEST).  Supports resume (wget --continue) so a partial download
+# can be retried safely.  Set http_proxy / https_proxy if behind a proxy.
+#
+# Example:
+#   make fetch-zim
+#   make fetch-zim ZIM_BOOK_NAME=wikipedia_en_all_maxi   # with images
+fetch-zim:
+	@mkdir -p $(ZIM_INPUT_DIR)
+	@echo "==> [fetch-zim] Resolving latest $(ZIM_BOOK_NAME) from Kiwix download index ..."
+	@url=$$($(PYTHON) -c \
+	    "import urllib.request,re,sys; \
+	     data=urllib.request.urlopen('$(KIWIX_DOWNLOAD)/').read().decode(); \
+	     hits=sorted(set(re.findall(r'$(ZIM_BOOK_NAME)_[0-9]{4}-[0-9]{2}\.zim', data))); \
+	     sys.stdout.write('$(KIWIX_DOWNLOAD)/' + hits[-1] if hits else '')"); \
+	if [ -z "$$url" ]; then \
+	    echo "ERROR: no ZIM found for '$(ZIM_BOOK_NAME)' at $(KIWIX_DOWNLOAD)/" >&2; \
+	    echo "       Check network/proxy, or inspect $(KIWIX_DOWNLOAD)/ manually." >&2; \
+	    exit 1; \
+	fi; \
+	echo "==> [fetch-zim] URL  : $$url"; \
+	echo "==> [fetch-zim] Dest : $(ZIM_DEST)"; \
+	wget --continue --progress=dot:giga -O "$(ZIM_DEST)" "$$url"
+	wget --continue --progress=dot:giga -O "$(ZIM_DEST)" "$$url"
 
 # ------------------------------------------------------------------
 # Docker
