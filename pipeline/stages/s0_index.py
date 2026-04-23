@@ -1,5 +1,5 @@
-"""
-pipeline.stages.s0_index — Stage 0: ZIM pre-pass indexer.
+﻿"""
+pipeline.stages.s0_index â€” Stage 0: ZIM pre-pass indexer.
 
 Single streaming pass over the ZIM file.  For every main-namespace,
 non-redirect article, this stage:
@@ -13,7 +13,7 @@ non-redirect article, this stage:
 
 After the streaming pass:
 
-  7. Resolves ``links.target_path`` → ``articles.id`` and populates
+  7. Resolves ``links.target_path`` â†’ ``articles.id`` and populates
      ``link_edges``.
   8. Updates ``articles.inbound_count`` and ``articles.outbound_count``.
 
@@ -167,7 +167,7 @@ def run(cfg: Config, conn: sqlite3.Connection) -> None:
     logger.info("Stage 0: clearing existing index tables ...")
     _clear_tables(conn)
 
-    # Disable fsync + FK checks during bulk load — massive write speed-up.
+    # Disable fsync + FK checks during bulk load â€” massive write speed-up.
     conn.execute("PRAGMA synchronous  = OFF")
     conn.execute("PRAGMA foreign_keys = OFF")
     conn.execute("PRAGMA cache_size   = -262144")  # 256 MB page cache
@@ -181,7 +181,7 @@ def run(cfg: Config, conn: sqlite3.Connection) -> None:
     )
 
     # ------------------------------------------------------------------
-    # Helper: drain one completed future → insert its results to SQLite.
+    # Helper: drain one completed future â†’ insert its results to SQLite.
     # Links + categories are inserted immediately (no in-memory buffers).
     # ------------------------------------------------------------------
     article_count = 0
@@ -334,236 +334,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Stage 0: ZIM pre-pass indexer")
     parser.add_argument("--config", default=None, help="Path to YAML config file")
     args = parser.parse_args()
-    _cfg = load_config(args.config)
-    _conn = open_db(_cfg.db_path)
-    run(_cfg, _conn)
-    _conn.close()
-
-
-    logger.info("Stage 0: clearing existing index tables …")
-    _clear_tables(conn)
-
-    reader = ZimReader(cfg.input.zim_path)
-    logger.info(
-        "Stage 0: ZIM has %d total entries (new_ns=%s)",
-        reader.entry_count,
-        reader.has_new_namespace_scheme,
-    )
-
-    # ------------------------------------------------------------------
-    # Pass 1: stream ZIM entries → insert articles, links, categories
-    # ------------------------------------------------------------------
-    article_buf: list[tuple] = []
-    link_buf: list[tuple] = []
-    cat_buf: list[tuple] = []
-
-    # We need the auto-assigned article.id after INSERT.
-    # Strategy: INSERT articles in batches, then retrieve ids by path.
-    # To avoid a second lookup per article, we insert articles first,
-    # then links/categories (keyed on the article's rowid).
-
-    # Because SQLite assigns rowids sequentially and we INSERT in order,
-    # we track the next expected rowid via lastrowid.  For safety we
-    # always look up id via path when building the link/cat buffers.
-
-    path_to_id: dict[str, int] = {}
-
-    article_count = 0
-
-    def _flush_articles() -> None:
-        nonlocal article_buf
-        if not article_buf:
-            return
-        conn.executemany(
-            """
-            INSERT OR IGNORE INTO articles
-              (path, title, is_redirect, is_disambig, is_stub,
-               html_size, text_chars)
-            VALUES (?, ?, 0, ?, ?, ?, ?)
-            """,
-            article_buf,
-        )
-        conn.commit()
-        article_buf = []
-
-    def _flush_links() -> None:
-        nonlocal link_buf
-        if not link_buf:
-            return
-        conn.executemany(
-            "INSERT INTO links (source_id, target_path) VALUES (?, ?)",
-            link_buf,
-        )
-        conn.commit()
-        link_buf = []
-
-    def _flush_cats() -> None:
-        nonlocal cat_buf
-        if not cat_buf:
-            return
-        conn.executemany(
-            "INSERT INTO article_categories (article_id, category) VALUES (?, ?)",
-            cat_buf,
-        )
-        conn.commit()
-        cat_buf = []
-
-    logger.info("Stage 0: streaming ZIM articles …")
-
-    with tqdm(total=reader.entry_count, unit="entry", desc="s0 index") as pbar:
-        for article in reader.iter_main_articles(
-            progress_callback=lambda i, _t: pbar.update(1) if i % 100 == 0 else None
-        ):
-            soup = _parse_html(article.html)
-            is_disambig = int(_is_disambiguation(soup))
-            is_stub = int(_is_stub(soup))
-            text_chars = _text_chars(soup)
-            categories = _extract_categories(soup)
-            outbound = _extract_outbound_links(soup)
-
-            article_buf.append((
-                article.path,
-                article.title,
-                is_disambig,
-                is_stub,
-                article.html_size,
-                text_chars,
-            ))
-            article_count += 1
-
-            if len(article_buf) >= _INSERT_BATCH:
-                _flush_articles()
-                # Build path_to_id for the batch just inserted.
-                _sync_path_ids(conn, path_to_id, [row[0] for row in article_buf])
-                # NOTE: article_buf was just cleared; iterate the DB for the
-                # paths we care about.  We loaded them before the clear so
-                # we use a small second lookup.
-
-            # We'll build link/cat after the full article pass so we have all IDs.
-            # Temporarily stash raw data per-path; resolve ids in Phase 2.
-            # (Storing HTML would be too memory-heavy; re-parse is avoided by
-            #  storing minimal extracted data alongside the path.)
-
-            # Store links/cats pending id resolution – use a temp structure.
-            # Appended to the main buffers in Phase 2 below.
-            _raw_links_buffer.setdefault(article.path, []).extend(outbound)
-            _raw_cats_buffer.setdefault(article.path, []).extend(categories)
-
-    # Flush remaining articles.
-    _flush_articles()
-
-    # ------------------------------------------------------------------
-    # Build the complete path → id map after all articles are inserted.
-    # ------------------------------------------------------------------
-    logger.info("Stage 0: building path→id map …")
-    path_to_id.clear()
-    for row in conn.execute("SELECT id, path FROM articles"):
-        path_to_id[row["path"]] = row["id"]
-
-    logger.info("Stage 0: %d articles indexed; inserting links + categories …", len(path_to_id))
-
-    # ------------------------------------------------------------------
-    # Pass 2: insert links and categories now that all IDs are known.
-    # ------------------------------------------------------------------
-    for path, links in tqdm(_raw_links_buffer.items(), desc="s0 links", unit="art"):
-        art_id = path_to_id.get(path)
-        if art_id is None:
-            continue
-        for target in links:
-            link_buf.append((art_id, target))
-        if len(link_buf) >= _INSERT_BATCH * 10:
-            _flush_links()
-
-    _flush_links()
-    _raw_links_buffer.clear()
-
-    for path, cats in tqdm(_raw_cats_buffer.items(), desc="s0 cats", unit="art"):
-        art_id = path_to_id.get(path)
-        if art_id is None:
-            continue
-        for cat in cats:
-            cat_buf.append((art_id, cat))
-        if len(cat_buf) >= _INSERT_BATCH * 5:
-            _flush_cats()
-
-    _flush_cats()
-    _raw_cats_buffer.clear()
-
-    # ------------------------------------------------------------------
-    # Pass 3: resolve link_edges (links where target exists in articles).
-    # ------------------------------------------------------------------
-    logger.info("Stage 0: resolving link edges …")
-    conn.execute("""
-        INSERT OR IGNORE INTO link_edges (source_id, target_id)
-        SELECT l.source_id, a.id
-        FROM links l
-        JOIN articles a ON a.path = l.target_path
-    """)
-    conn.commit()
-
-    # ------------------------------------------------------------------
-    # Pass 4: update inbound_count and outbound_count on articles.
-    # ------------------------------------------------------------------
-    logger.info("Stage 0: updating link counts …")
-    conn.execute("""
-        UPDATE articles
-        SET outbound_count = (
-            SELECT COUNT(*) FROM link_edges le WHERE le.source_id = articles.id
-        )
-    """)
-    conn.execute("""
-        UPDATE articles
-        SET inbound_count = (
-            SELECT COUNT(*) FROM link_edges le WHERE le.target_id = articles.id
-        )
-    """)
-    conn.commit()
-
-    final_count = conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
-    logger.info("Stage 0: complete.  %d articles in index.", final_count)
-
-    record_stage_complete(conn, "s0", article_count=final_count, notes="ZIM pre-pass")
-
-
-# ---------------------------------------------------------------------------
-# Module-level temporary buffers (cleared during run())
-# These avoid re-parsing HTML; they are in-memory for the duration of stage 0.
-# ---------------------------------------------------------------------------
-_raw_links_buffer: dict[str, list[str]] = {}
-_raw_cats_buffer: dict[str, list[str]] = {}
-
-
-def _sync_path_ids(
-    conn: sqlite3.Connection,
-    path_to_id: dict[str, int],
-    paths: list[str],
-) -> None:
-    """Update path_to_id for the given list of paths from the DB."""
-    if not paths:
-        return
-    placeholders = ",".join("?" * len(paths))
-    for row in conn.execute(
-        f"SELECT id, path FROM articles WHERE path IN ({placeholders})", paths
-    ):
-        path_to_id[row["path"]] = row["id"]
-
-
-# ---------------------------------------------------------------------------
-# Module-level __main__ support (for Makefile stage invocation)
-# ---------------------------------------------------------------------------
-if __name__ == "__main__":
-    import argparse
-    import logging as _logging
-
-    from pipeline.config import load_config
-    from pipeline.db import open_db
-
-    _logging.basicConfig(level=_logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
-    parser = argparse.ArgumentParser(description="Run Stage 0: ZIM pre-pass indexer")
-    parser.add_argument("--config", default=None, help="Path to YAML config file")
-    args = parser.parse_args()
-
     _cfg = load_config(args.config)
     _conn = open_db(_cfg.db_path)
     run(_cfg, _conn)
