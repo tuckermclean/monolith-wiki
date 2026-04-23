@@ -102,10 +102,17 @@ def _element_has_bad_id(tag: Tag) -> bool:
 
 def _strip_bad_elements(soup: BeautifulSoup) -> None:
     """Remove all elements that match the forbidden class/id lists."""
-    for tag in soup.find_all(True):
-        if isinstance(tag, NavigableString):
-            continue
-        if _element_has_bad_class(tag) or _element_has_bad_id(tag):
+    # Two-phase: collect first, then remove.  Decomposing a parent mid-iteration
+    # leaves its children as orphaned tags in the result list; calling .get() on a
+    # partially-destroyed tag raises AttributeError in some BS4 versions.
+    to_remove = [
+        tag for tag in soup.find_all(True)
+        if not isinstance(tag, NavigableString)
+        and (_element_has_bad_class(tag) or _element_has_bad_id(tag))
+    ]
+    for tag in to_remove:
+        # Skip if already removed as a child of a previously decomposed parent.
+        if getattr(tag, "parent", None) is not None:
             tag.decompose()
 
 
@@ -321,7 +328,11 @@ def _normalize_worker(args: tuple) -> tuple[str, str] | None:
         return (path, output_html)
     except Exception as exc:  # noqa: BLE001
         import logging as _log  # noqa: PLC0415
-        _log.getLogger(__name__).warning("Stage 6: normalize failed %s: %s", path, exc)
+        import traceback as _tb  # noqa: PLC0415
+        _log.getLogger(__name__).warning(
+            "Stage 6: normalize failed %s: %s\n%s",
+            path, exc, _tb.format_exc(),
+        )
         return None
 
 
