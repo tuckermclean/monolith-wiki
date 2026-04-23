@@ -20,6 +20,12 @@ dependencies = [
 [project.scripts]
 monolith-wiki = "pipeline.cli:main"
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-cov>=5.0.0",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["pipeline*"]
