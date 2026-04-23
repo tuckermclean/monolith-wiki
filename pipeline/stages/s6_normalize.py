@@ -349,6 +349,8 @@ def run(cfg: Config, conn: sqlite3.Connection) -> None:
     ):
         path_to_row[row["path"]] = dict(row)
 
+    selected_paths: list[str] = list(path_to_row.keys())
+
     # Assign output paths: "{domain}/{slug}.html"
     path_to_output: dict[str, str] = {}
     for path, row in path_to_row.items():
