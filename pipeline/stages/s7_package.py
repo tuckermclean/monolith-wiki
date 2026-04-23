@@ -31,8 +31,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import sqlite3
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import zstandard as zstd
@@ -45,6 +47,26 @@ from pipeline.hash import write_build_hash
 logger = logging.getLogger(__name__)
 
 _ASSETS_SRC = Path(__file__).parent.parent.parent / "assets" / "style.css"
+
+# ---------------------------------------------------------------------------
+# Worker: compresses a single file, returns (output_path_str, compressed_bytes)
+# ---------------------------------------------------------------------------
+
+_W_ZSTD_LEVEL: int = 9
+
+
+def _init_compress_worker(level: int) -> None:
+    global _W_ZSTD_LEVEL  # noqa: PLW0603
+    _W_ZSTD_LEVEL = level
+
+
+def _compress_worker(args: tuple) -> tuple[str, bytes]:
+    """Compress one normalized HTML file. Returns (output_path_str, compressed)."""
+    norm_path_str, zst_path_str = args
+    import zstandard as _zstd  # noqa: PLC0415
+    cctx = _zstd.ZstdCompressor(level=_W_ZSTD_LEVEL)
+    html_bytes = Path(norm_path_str).read_bytes()
+    return zst_path_str, cctx.compress(html_bytes)
 
 
 def run(cfg: Config, conn: sqlite3.Connection) -> None:
@@ -75,38 +97,50 @@ def run(cfg: Config, conn: sqlite3.Connection) -> None:
         """,
     ))
 
-    logger.info("Stage 7: packaging %d articles …", len(rows))
+    logger.info("Stage 7: packaging %d articles ...", len(rows))
 
-    cctx = zstd.ZstdCompressor(level=cfg.build.zstd_level)
+    n_workers: int = cfg.build.workers or min(os.cpu_count() or 2, 8)
     manifest_entries: list[dict] = []
     total_compressed_bytes = 0
     failed_count = 0
 
-    for row in tqdm(rows, desc="s7 package", unit="art"):
+    # Build task list (skip missing files early).
+    tasks: list[tuple[str, str, dict]] = []
+    for row in rows:
         norm_path = cfg.normalized_path / row["output_path"]
         if not norm_path.exists():
             logger.warning("Stage 7: normalised file missing: %s", norm_path)
             failed_count += 1
             continue
-
-        html_bytes = norm_path.read_bytes()
-        compressed = cctx.compress(html_bytes)
-        compressed_size = len(compressed)
-        total_compressed_bytes += compressed_size
-
-        # Write compressed file.
-        zst_path = corpus_dir / (row["output_path"] + ".zst")
+        zst_path = cfg.corpus_path / (row["output_path"] + ".zst")
         zst_path.parent.mkdir(parents=True, exist_ok=True)
-        zst_path.write_bytes(compressed)
+        tasks.append((str(norm_path), str(zst_path), dict(row)))
 
-        manifest_entries.append({
-            "path": row["path"],
-            "title": row["title"],
-            "domain": row["domain"],
-            "kss": round(row["kss"], 6) if row["kss"] is not None else None,
-            "output_path": row["output_path"] + ".zst",
-            "compressed_bytes": compressed_size,
-        })
+    with ProcessPoolExecutor(
+        max_workers=n_workers,
+        initializer=_init_compress_worker,
+        initargs=(cfg.build.zstd_level,),
+    ) as pool:
+        worker_args = [(t[0], t[1]) for t in tasks]
+        row_map = {t[1]: t[2] for t in tasks}
+
+        for zst_path_str, compressed in tqdm(
+            pool.map(_compress_worker, worker_args, chunksize=50),
+            total=len(worker_args),
+            desc="s7 package", unit="art",
+        ):
+            Path(zst_path_str).write_bytes(compressed)
+            compressed_size = len(compressed)
+            total_compressed_bytes += compressed_size
+            row = row_map[zst_path_str]
+            manifest_entries.append({
+                "path": row["path"],
+                "title": row["title"],
+                "domain": row["domain"],
+                "kss": round(row["kss"], 6) if row["kss"] is not None else None,
+                "output_path": row["output_path"] + ".zst",
+                "compressed_bytes": compressed_size,
+            })
 
     # ------------------------------------------------------------------
     # Write manifest (sorted by path for determinism).

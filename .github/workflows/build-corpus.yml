@@ -36,12 +36,21 @@ permissions:
 # ── Jobs ─────────────────────────────────────────────────────────────────────
 jobs:
   build:
+    # ── Runner selection ────────────────────────────────────────────────
+    # Full corpus build requirements:
+    #   • ~22 GB disk for the ZIM + ~5 GB for build artefacts
+    #   • 8+ GB RAM (each worker needs ~1-2 GB)
+    #   • 4+ cores for meaningful parallelism
+    #   • 2-4 hours wall time (Stage 0 dominates)
+    #
+    # GitHub-hosted runners (ubuntu-latest = 2 cores / 7 GB) will work but
+    # are slow.  Use a self-hosted runner with a persistent ZIM cache for
+    # production builds.  To use a self-hosted runner, change 'runs-on' to
+    # the label(s) of your runner, e.g.: [self-hosted, linux, x64, large]
+    #
+    # Larger GitHub-hosted runners (4/8/16 core) are available on paid plans:
+    #   runs-on: ubuntu-latest-4-core
     runs-on: ubuntu-latest
-    # ⚠ The full no-pictures Wikipedia ZIM is ~22 GB.  GitHub-hosted runners
-    # have a 10 GB Actions cache quota, so the ZIM will NOT persist across
-    # runs and will be re-downloaded each time (~20 min on a fast uplink).
-    # For production use, pin this to a self-hosted runner that keeps a warm
-    # local cache or has the ZIM pre-fetched on a mounted volume.
 
     env:
       ZIM_BOOK: ${{ inputs.zim_book || 'wikipedia_en_all_nopic' }}

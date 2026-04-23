@@ -38,8 +38,10 @@ from __future__ import annotations
 import gzip
 import hashlib
 import logging
+import os
 import re
 import sqlite3
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import unquote, quote
 
@@ -278,6 +280,52 @@ def _estimate_gzip_size(html: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Worker pool — process initializer and per-article function
+# ---------------------------------------------------------------------------
+
+# Globals set once per worker process via initializer; avoids pickling the
+# full path_to_output dict with every task.
+_W_PATH_TO_OUTPUT: dict[str, str] = {}
+_W_CSS_REL: str = "../assets/style.css"
+
+
+def _init_normalize_worker(path_to_output: dict, css_rel: str) -> None:
+    global _W_PATH_TO_OUTPUT, _W_CSS_REL  # noqa: PLW0603
+    _W_PATH_TO_OUTPUT = path_to_output
+    _W_CSS_REL = css_rel
+
+
+def _normalize_worker(args: tuple) -> tuple[str, str] | None:
+    """
+    Normalize one article's HTML.  Runs in a worker process.
+    Returns (path, output_html) or None on failure.
+    """
+    path, title, domain, html_bytes = args
+    try:
+        from bs4 import BeautifulSoup as _BS4  # noqa: PLC0415
+        soup = _BS4(html_bytes, "lxml")
+        _strip_bad_elements(soup)
+        _strip_images(soup)
+        _strip_style_and_script(soup)
+        content_div = (
+            soup.find(id="mw-content-text") or soup.find("body") or soup
+        )
+        _rewrite_links(content_div, _W_PATH_TO_OUTPUT, domain)
+        toc = _build_toc(content_div)
+        output_html = _build_output_html(
+            title=title,
+            toc_html=str(toc) if toc else "",
+            content_html=str(content_div),
+            css_rel=_W_CSS_REL,
+        )
+        return (path, output_html)
+    except Exception as exc:  # noqa: BLE001
+        import logging as _log  # noqa: PLC0415
+        _log.getLogger(__name__).warning("Stage 6: normalize failed %s: %s", path, exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -317,79 +365,69 @@ def run(cfg: Config, conn: sqlite3.Connection) -> None:
     conn.commit()
 
     # ------------------------------------------------------------------
-    # Open ZIM reader
+    # Open ZIM reader (main thread only — not shared with workers)
     # ------------------------------------------------------------------
     reader = ZimReader(cfg.input.zim_path)
-
-    # ------------------------------------------------------------------
-    # CSS relative path depends on article depth (always one directory deep).
-    # All articles are at corpus_dir/{domain}/{slug}.html → "../assets/style.css"
-    # ------------------------------------------------------------------
     css_rel = "../assets/style.css"
+    n_workers: int = cfg.build.workers or min(os.cpu_count() or 2, 8)
+    logger.info("Stage 6: normalising %d articles with %d workers ...",
+                len(selected_paths), n_workers)
 
     # ------------------------------------------------------------------
-    # Process articles
+    # Process articles in parallel.
+    # Main thread reads HTML from ZIM (single-threaded), submits batches
+    # to worker pool.  Workers do the BS4 heavy lifting.
+    # path_to_output is shared once via process initializer.
     # ------------------------------------------------------------------
     running_compressed_bytes = 0
     max_bytes = cfg.build.max_total_compressed_bytes
     normalised_count = 0
     failed_count = 0
+    _CHUNK = 200  # articles per pool.map chunk
 
-    selected_paths = list(path_to_row.keys())
-
-    for path in tqdm(selected_paths, desc="s6 normalize", unit="art"):
-        row = path_to_row[path]
-        domain = row["domain"]
-
-        article = reader.get_article_by_path(path)
-        if article is None:
-            logger.warning("Stage 6: article not found in ZIM: %s", path)
-            failed_count += 1
-            continue
-
-        soup = BeautifulSoup(article.html, "lxml")
-
-        _strip_bad_elements(soup)
-        _strip_images(soup)
-        _strip_style_and_script(soup)
-
-        # Extract cleaned content.
-        content_div = soup.find(id="mw-content-text")
-        if content_div is None:
-            content_div = soup.find("body") or soup
-
-        # Rewrite links within the content.
-        _rewrite_links(content_div, path_to_output, domain)
-
-        toc = _build_toc(content_div)
-        toc_html = str(toc) if toc else ""
-        content_html = str(content_div)
-
-        output_html = _build_output_html(
-            title=row["title"],
-            toc_html=toc_html,
-            content_html=content_html,
-            css_rel=css_rel,
-        )
-
-        # Size discipline: estimate compressed footprint.
+    def _write_result(path: str, output_html: str) -> None:
+        nonlocal running_compressed_bytes, normalised_count
         compressed_estimate = _estimate_gzip_size(output_html)
         if running_compressed_bytes + compressed_estimate > max_bytes:
             raise RuntimeError(
                 f"Stage 6: compressed size budget exceeded at article '{path}'."
-                f"  Running total {running_compressed_bytes / 1e6:.1f} MB + "
-                f"{compressed_estimate / 1024:.1f} KB > "
-                f"{max_bytes / 1e6:.1f} MB limit.  "
-                "Reduce quotas or increase max_total_compressed_bytes."
+                f"  Running={running_compressed_bytes / 1e6:.1f} MB +"
+                f" {compressed_estimate / 1024:.1f} KB >"
+                f" {max_bytes / 1e6:.1f} MB limit."
             )
         running_compressed_bytes += compressed_estimate
-
-        # Write output file.
         output_rel = path_to_output[path]
         output_abs = cfg.normalized_path / output_rel
         output_abs.parent.mkdir(parents=True, exist_ok=True)
         output_abs.write_text(output_html, encoding="utf-8")
         normalised_count += 1
+
+    with ProcessPoolExecutor(
+        max_workers=n_workers,
+        initializer=_init_normalize_worker,
+        initargs=(path_to_output, css_rel),
+    ) as pool:
+        # Build task args in chunks to keep ZIM reads and RSS bounded.
+        for chunk_start in tqdm(
+            range(0, len(selected_paths), _CHUNK),
+            desc="s6 normalize", unit="chunk"
+        ):
+            chunk = selected_paths[chunk_start: chunk_start + _CHUNK]
+            tasks = []
+            for path in chunk:
+                row = path_to_row[path]
+                article = reader.get_article_by_path(path)
+                if article is None:
+                    logger.warning("Stage 6: article not found in ZIM: %s", path)
+                    failed_count += 1
+                    continue
+                tasks.append((path, row["title"], row["domain"], article.html))
+
+            for result in pool.map(_normalize_worker, tasks, chunksize=10):
+                if result is None:
+                    failed_count += 1
+                    continue
+                _write_result(result[0], result[1])
 
     logger.info(
         "Stage 6: complete.  %d normalised, %d failed.  "

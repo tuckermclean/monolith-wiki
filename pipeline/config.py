@@ -35,6 +35,7 @@ class BuildConfig:
     css_filename: str = "style.css"
     max_total_compressed_bytes: int = 419_430_400  # 400 MB
     zstd_level: int = 9
+    workers: int = 0  # 0 = auto-detect (os.cpu_count())
 
 
 @dataclass
