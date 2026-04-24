@@ -50,11 +50,11 @@ jobs:
         run: |
           python3 - <<'EOF'
           import os, re, sys, urllib.request
-          # wikipedia_en_ray_charles is a well-known Kiwix test fixture
+          # wikipedia_en_ray-charles is a well-known Kiwix test fixture
           base = 'https://download.kiwix.org/zim/wikipedia'
           index = urllib.request.urlopen(base + '/').read().decode()
           # pick smallest matching ZIM
-          hits = sorted(set(re.findall(r'wikipedia_en_ray_charles[^"<>]+\.zim', index)))
+          hits = sorted(set(re.findall(r'wikipedia_en_ray-charles[^"<>]+\.zim', index)))
           if not hits:
               # fallback: grab any wikipedia mini/test ZIM
               hits = sorted(set(re.findall(r'wikipedia_en_[a-z_]+_\d{4}-\d{2}\.zim', index)))
@@ -116,7 +116,7 @@ jobs:
             # link sub-graph is sparse.  Relax all graph-quality thresholds.
             quota_tolerance: 3.0
             max_dead_end_rate: 0.999
-            max_inbound_orphans: 10
+            max_inbound_orphans: 50
             max_outbound_orphans: 50
             random_walk_count: 200
           EOF

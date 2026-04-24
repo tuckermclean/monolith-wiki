@@ -1,0 +1,24 @@
+input:
+  zim_path: "data/input/wikipedia_en_dev.zim"
+  zim_sha256: null
+build:
+  build_dir: "data/build-dev"
+  workers: 0
+prefilter:
+  min_text_chars: 500
+  min_inbound_links: 0
+quotas:
+  Geography: 999
+  Biography: 999
+  History: 999
+  Science_Math: 999
+  Arts_Culture: 999
+  Technology_Computing: 999
+  Society_Politics_Economics: 999
+  Meta_Reference: 999
+validation:
+  quota_tolerance: 3.0
+  max_dead_end_rate: 0.999
+  max_inbound_orphans: 999
+  max_outbound_orphans: 999
+  random_walk_count: 200

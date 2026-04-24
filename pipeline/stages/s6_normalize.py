@@ -190,17 +190,17 @@ def _relative_path(from_domain: str, to_output_path: str) -> str:
     return "../" + to_output_path
 
 
-def _build_toc(soup: BeautifulSoup) -> Tag | None:
+def _build_toc(content_div: Tag, root: BeautifulSoup) -> Tag | None:
     """Build a simple TOC from H2/H3 headings; return the nav element."""
-    headings = soup.find_all(["h2", "h3"])
+    headings = content_div.find_all(["h2", "h3"])
     if len(headings) < 3:
         return None
 
-    nav = soup.new_tag("nav", attrs={"id": "toc", "class": "toc"})
-    toc_title = soup.new_tag("div", attrs={"class": "toc-title"})
+    nav = root.new_tag("nav", attrs={"id": "toc", "class": "toc"})
+    toc_title = root.new_tag("div", attrs={"class": "toc-title"})
     toc_title.string = "Contents"
     nav.append(toc_title)
-    ol = soup.new_tag("ol")
+    ol = root.new_tag("ol")
     nav.append(ol)
 
     h2_counter = 0
@@ -215,17 +215,17 @@ def _build_toc(soup: BeautifulSoup) -> Tag | None:
         if heading.name == "h2":
             h2_counter += 1
             h3_counter = 0
-            li = soup.new_tag("li", attrs={"class": "toc-h2"})
-            a = soup.new_tag("a", href=f"#{anchor_id}")
+            li = root.new_tag("li", attrs={"class": "toc-h2"})
+            a = root.new_tag("a", href=f"#{anchor_id}")
             a.string = f"{h2_counter}. {text}"
             li.append(a)
-            current_h2_li = soup.new_tag("ol")
+            current_h2_li = root.new_tag("ol")
             li.append(current_h2_li)
             ol.append(li)
         elif heading.name == "h3" and current_h2_li is not None:
             h3_counter += 1
-            li = soup.new_tag("li", attrs={"class": "toc-h3"})
-            a = soup.new_tag("a", href=f"#{anchor_id}")
+            li = root.new_tag("li", attrs={"class": "toc-h3"})
+            a = root.new_tag("a", href=f"#{anchor_id}")
             a.string = f"{h2_counter}.{h3_counter} {text}"
             li.append(a)
             current_h2_li.append(li)
@@ -318,7 +318,7 @@ def _normalize_worker(args: tuple) -> tuple[str, str] | None:
             soup.find(id="mw-content-text") or soup.find("body") or soup
         )
         _rewrite_links(content_div, _W_PATH_TO_OUTPUT, domain)
-        toc = _build_toc(content_div)
+        toc = _build_toc(content_div, soup)
         output_html = _build_output_html(
             title=title,
             toc_html=str(toc) if toc else "",
