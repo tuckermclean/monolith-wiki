@@ -1,8 +1,10 @@
 name: CI
 
 # Runs on every push and pull request.
-# Uses a tiny (~50 MB) Kiwix ZIM to validate the full pipeline end-to-end
-# without downloading the 22 GB production ZIM.
+# Uses the Kiwix Ray Charles mini ZIM (~694 KB) to validate the full
+# pipeline end-to-end without downloading the 22 GB production ZIM.
+# ZIM resolution, config generation, and pipeline execution are all
+# handled by `make mini` — see Makefile for details.
 
 on:
   push:
@@ -44,87 +46,8 @@ jobs:
       - name: Install
         run: pip install -e ".[dev]" ; sudo apt-get install -y --no-install-recommends zstd
 
-      # ── Fetch a tiny test ZIM (~50 MB, Ray Charles article set) ───────
-      - name: Resolve mini ZIM URL
-        id: mini_zim
-        run: |
-          python3 - <<'EOF'
-          import os, re, sys, urllib.request
-          # wikipedia_en_ray-charles is a well-known Kiwix test fixture
-          base = 'https://download.kiwix.org/zim/wikipedia'
-          index = urllib.request.urlopen(base + '/').read().decode()
-          # pick smallest matching ZIM
-          hits = sorted(set(re.findall(r'wikipedia_en_ray-charles[^"<>]+\.zim', index)))
-          if not hits:
-              # fallback: grab any wikipedia mini/test ZIM
-              hits = sorted(set(re.findall(r'wikipedia_en_[a-z_]+_\d{4}-\d{2}\.zim', index)))
-              hits = [h for h in hits if 'mini' in h or 'test' in h or 'ray' in h]
-          if not hits:
-              print('::warning::Could not find a mini test ZIM; skipping integration.')
-              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write('skip=true\n')
-              sys.exit(0)
-          fn = hits[-1]
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f'url={base}/{fn}\n')
-              f.write(f'filename={fn}\n')
-              f.write('skip=false\n')
-          print(f'Mini ZIM: {fn}')
-          EOF
-
-      - name: Cache mini ZIM
-        if: steps.mini_zim.outputs.skip == 'false'
-        id: cache-zim
-        uses: actions/cache@v4
-        with:
-          path: data/input/wikipedia_en.zim
-          key: mini-zim-${{ steps.mini_zim.outputs.filename }}
-
-      - name: Download mini ZIM
-        if: >-
-          steps.mini_zim.outputs.skip == 'false' &&
-          steps.cache-zim.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p data/input
-          wget --quiet -O data/input/wikipedia_en.zim "${{ steps.mini_zim.outputs.url }}"
-
-      # Relax quotas to match the tiny article count of a mini ZIM.
-      - name: Write mini config
-        if: steps.mini_zim.outputs.skip == 'false'
-        run: |
-          cat > config/ci.yaml <<'EOF'
-          input:
-            zim_path: "data/input/wikipedia_en.zim"
-            zim_sha256: null
-          build:
-            build_dir: "data/build"
-            workers: 2
-          prefilter:
-            min_text_chars: 500
-            min_inbound_links: 0
-          quotas:
-            Geography: 10
-            Biography: 10
-            History: 10
-            Science_Math: 10
-            Arts_Culture: 10
-            Technology_Computing: 10
-            Society_Politics_Economics: 10
-            Meta_Reference: 10
-          validation:
-            # Mini ZIM articles link heavily outside the mini corpus, so the
-            # link sub-graph is sparse.  Relax all graph-quality thresholds.
-            quota_tolerance: 3.0
-            max_dead_end_rate: 0.999
-            max_inbound_orphans: 50
-            max_outbound_orphans: 50
-            random_walk_count: 200
-          EOF
-
-      - name: Run pipeline (mini ZIM)
-        if: steps.mini_zim.outputs.skip == 'false'
-        run: monolith-wiki --config config/ci.yaml run-all
+      - name: Run mini pipeline
+        run: make mini PYTHON=python3
 
       - name: Verify BUILD_HASH exists
-        if: steps.mini_zim.outputs.skip == 'false'
-        run: test -f data/build/BUILD_HASH && cat data/build/BUILD_HASH
+        run: test -f data/build-mini/BUILD_HASH && cat data/build-mini/BUILD_HASH
