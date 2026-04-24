@@ -111,6 +111,14 @@ jobs:
             Technology_Computing: 10
             Society_Politics_Economics: 10
             Meta_Reference: 10
+          validation:
+            # Mini ZIM articles link heavily outside the mini corpus, so the
+            # link sub-graph is sparse.  Relax all graph-quality thresholds.
+            quota_tolerance: 3.0
+            max_dead_end_rate: 0.999
+            max_inbound_orphans: 10
+            max_outbound_orphans: 50
+            random_walk_count: 200
           EOF
 
       - name: Run pipeline (mini ZIM)

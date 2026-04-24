@@ -103,6 +103,10 @@ class ValidationConfig:
     random_walk_steps: int = 200
     max_dead_end_rate: float = 0.01
     quota_tolerance: float = 0.05
+    # Maximum allowed articles with zero inbound/outbound links from selected set.
+    # Raise these in CI configs where the mini ZIM has a sparse link graph.
+    max_inbound_orphans: int = 0
+    max_outbound_orphans: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +196,7 @@ def _from_dict(raw: dict) -> Config:
             "max_total_compressed_bytes", cfg.build.max_total_compressed_bytes
         ),
         zstd_level=bld.get("zstd_level", cfg.build.zstd_level),
+        workers=bld.get("workers", cfg.build.workers),
     )
 
     pf = raw.get("prefilter", {})
@@ -243,6 +248,8 @@ def _from_dict(raw: dict) -> Config:
         random_walk_steps=vl.get("random_walk_steps", cfg.validation.random_walk_steps),
         max_dead_end_rate=vl.get("max_dead_end_rate", cfg.validation.max_dead_end_rate),
         quota_tolerance=vl.get("quota_tolerance", cfg.validation.quota_tolerance),
+        max_inbound_orphans=vl.get("max_inbound_orphans", cfg.validation.max_inbound_orphans),
+        max_outbound_orphans=vl.get("max_outbound_orphans", cfg.validation.max_outbound_orphans),
     )
 
     return cfg

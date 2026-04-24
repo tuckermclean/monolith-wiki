@@ -53,16 +53,17 @@ def run(cfg: Config, conn: sqlite3.Connection) -> None:
     ).fetchone()[0]
 
     results["inbound_coverage"] = {
-        "pass": orphan_no_inbound == 0,
+        "pass": orphan_no_inbound <= cfg.validation.max_inbound_orphans,
         "orphan_count": orphan_no_inbound,
-        "description": "All selected articles have ≥1 inbound link from another selected article.",
+        "max_allowed": cfg.validation.max_inbound_orphans,
+        "description": "Articles with no inbound links from selected set ≤ max_inbound_orphans.",
     }
-    if orphan_no_inbound > 0:
+    if orphan_no_inbound > cfg.validation.max_inbound_orphans:
         failures.append(f"inbound_coverage: {orphan_no_inbound} articles have no inbound links")
     logger.info(
-        "Check 1 — inbound coverage: %s (%d articles with no inbound links)",
-        "PASS" if orphan_no_inbound == 0 else "FAIL",
-        orphan_no_inbound,
+        "Check 1 — inbound coverage: %s (%d articles with no inbound links, max=%d)",
+        "PASS" if orphan_no_inbound <= cfg.validation.max_inbound_orphans else "FAIL",
+        orphan_no_inbound, cfg.validation.max_inbound_orphans,
     )
 
     # ------------------------------------------------------------------
@@ -81,16 +82,17 @@ def run(cfg: Config, conn: sqlite3.Connection) -> None:
     ).fetchone()[0]
 
     results["outbound_coverage"] = {
-        "pass": orphan_no_outbound == 0,
+        "pass": orphan_no_outbound <= cfg.validation.max_outbound_orphans,
         "dead_end_count": orphan_no_outbound,
-        "description": "All selected articles have ≥1 outbound link to another selected article.",
+        "max_allowed": cfg.validation.max_outbound_orphans,
+        "description": "Articles with no outbound links to selected set ≤ max_outbound_orphans.",
     }
-    if orphan_no_outbound > 0:
+    if orphan_no_outbound > cfg.validation.max_outbound_orphans:
         failures.append(f"outbound_coverage: {orphan_no_outbound} articles have no outbound links")
     logger.info(
-        "Check 2 — outbound coverage: %s (%d articles with no outbound links)",
-        "PASS" if orphan_no_outbound == 0 else "FAIL",
-        orphan_no_outbound,
+        "Check 2 — outbound coverage: %s (%d articles with no outbound links, max=%d)",
+        "PASS" if orphan_no_outbound <= cfg.validation.max_outbound_orphans else "FAIL",
+        orphan_no_outbound, cfg.validation.max_outbound_orphans,
     )
 
     # ------------------------------------------------------------------

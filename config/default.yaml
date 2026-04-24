@@ -117,3 +117,9 @@ validation:
   # Acceptable quota deviation (fraction): each domain count must be within
   # [quota * (1 - tolerance), quota * (1 + tolerance)].
   quota_tolerance: 0.05
+
+  # Maximum number of selected articles allowed to have zero inbound / outbound
+  # links from other selected articles.  Raise these in CI configs where a
+  # mini ZIM has a sparse link graph.
+  max_inbound_orphans: 0
+  max_outbound_orphans: 0
