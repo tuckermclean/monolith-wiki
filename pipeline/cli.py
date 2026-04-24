@@ -24,8 +24,9 @@ from pipeline.db import open_db, stage_is_complete
 
 # Ordered list of all stage module paths and their human-readable names.
 _STAGES: list[tuple[str, str]] = [
-    ("s0", "Stage 0 — ZIM pre-pass indexer"),
-    ("s1", "Stage 1 — Hard pre-filter"),
+    ("s0",  "Stage 0  — ZIM pre-pass indexer"),
+    ("s0b", "Stage 0b — Fetch Wikipedia categories"),
+    ("s1",  "Stage 1  — Hard pre-filter"),
     ("s2", "Stage 2 — Domain classification"),
     ("s3", "Stage 3 — KSS computation"),
     ("s4", "Stage 4 — Domain quota selection"),
@@ -41,8 +42,9 @@ _STAGE_IDS = [s for s, _ in _STAGES]
 def _import_stage(stage_id: str):
     """Dynamically import a stage module and return its ``run()`` function."""
     name_map = {
-        "s0": "pipeline.stages.s0_index",
-        "s1": "pipeline.stages.s1_prefilter",
+        "s0":  "pipeline.stages.s0_index",
+        "s0b": "pipeline.stages.s0b_fetch_categories",
+        "s1":  "pipeline.stages.s1_prefilter",
         "s2": "pipeline.stages.s2_domain",
         "s3": "pipeline.stages.s3_kss",
         "s4": "pipeline.stages.s4_quota",
