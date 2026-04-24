@@ -156,7 +156,7 @@ def test_toc_built_from_headings():
       <h2 id="h2b">Section Two</h2><p>Para</p>
     </div>
     """)
-    toc = _build_toc(soup)
+    toc = _build_toc(soup, soup)
     assert toc is not None
     toc_text = toc.get_text()
     assert "Section One" in toc_text
@@ -166,7 +166,7 @@ def test_toc_built_from_headings():
 
 def test_toc_returns_none_for_few_headings():
     soup = _soup('<div><h2>Only</h2></div>')
-    toc = _build_toc(soup)
+    toc = _build_toc(soup, soup)
     assert toc is None
 
 
